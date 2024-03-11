@@ -1,0 +1,1135 @@
+Program.Sub.Preflight.Start
+Variable.Global.iWF.Declare(Long,0)
+Variable.Global.iLine.Declare(Long,0)
+Variable.Global.sPart.Declare(String)
+Variable.Global.sRMA.Declare(String)
+Variable.Global.META1.Declare(String)
+Variable.Global.META2.Declare(String)
+Variable.Global.META3.Declare(String)
+Variable.Global.META4.Declare(String)
+Variable.Global.META5.Declare(String)
+
+Program.Sub.Preflight.End
+
+Program.Sub.Main.Start
+F.Intrinsic.Control.SetErrorHandler("Main_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+v.Local.iid.Declare(long)
+v.Local.sRMA.Declare(string)
+v.Local.iret.Declare(long,0)
+v.Local.stitle.Declare(string)
+v.Local.ssql.Declare(string)
+v.Local.itype.declare(long)
+v.Local.dduedate.Declare(date)
+v.Local.istatus.Declare(long)
+v.Local.sline.declare(string)
+v.Local.spart.Declare(string)
+v.Local.srev.Declare(string)
+v.Local.sloc.Declare(string)
+v.Local.iholder.Declare(long)
+
+'This will be a workflow that will be triggered from the New RMA Creation Scree
+'Coded by: WAW
+'Date: 08/26/2016
+
+'open connection
+F.odbc.Connection!conx.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass,1000000)
+
+'get the ID to create the workflow
+f.Global.WorkFlow.GetIDFromTitle("RMA Workflow",v.Global.iWF)
+
+'query for the meta data
+f.Intrinsic.String.Build("select META_1, META_2, META_3, META_4, META_5 from ATG_WF_LINES where WF_ID = '{0}' and LINE = '{1}'",v.Global.iWF,1,v.Local.ssql)
+F.ODBC.Connection!conx.OpenRecordsetRO("rst",V.Local.sSQL)
+F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,False)
+	'set the meta global variables
+	'set the RMA number as Meta 1
+	v.Global.META1.Set(v.ODBC.conx!rst.FieldValTrim!META_1)
+	'set the RMA line number as Meta 2
+	v.Global.META2.Set(v.ODBC.conx!rst.FieldValTrim!META_2)
+	'set the part number as meta 3
+	v.Global.META3.Set(v.ODBC.conx!rst.FieldValTrim!META_3)
+	'set the Location as Meta 4
+	v.Global.META4.Set(v.ODBC.conx!rst.FieldValTrim!META_4)
+	'meta 5
+	v.Global.META5.Set(v.ODBC.conx!rst.FieldValTrim!META_5)
+f.Intrinsic.Control.EndIf
+f.ODBC.conx!rst.Close
+
+'RMA Completed Process
+F.Intrinsic.Control.if(V.Caller.Hook,=,34800)
+
+	'set the due date
+	v.Local.dduedate.Set(v.Ambient.Date)
+	f.Intrinsic.Date.DateAdd("D",1,v.Local.dduedate,v.Local.dduedate)
+	
+	'set the RMA
+	v.Local.sRMA.Set(v.Passed.000125)
+	f.Intrinsic.String.LPad(v.Local.sRMA,"0",7,v.Local.sRMA)
+	v.Global.sRMA.Set(v.Local.sRMA)
+	v.Local.stitle.Set("RMA Workflow")
+	'set the RMA line
+	v.Local.sline.set(v.Passed.000069)
+	v.Local.sloc.Set(v.Passed.000005)
+	v.Local.srev.Set(v.Passed.00004)
+	v.Local.spart.Set(v.Passed.000003)
+		
+	'build the gsspartstring
+	f.Intrinsic.String.GSSPartString(v.Local.spart.Trim,v.Local.srev.Trim,v.Local.spart)
+	
+	'get the ID to create the workflow
+	f.Global.WorkFlow.GetTemplateIDFromTitle("RMA Workflow",v.Global.iWF)
+	f.Intrinsic.Control.If(v.Global.iWF,=,-1)
+		'inform the user there is no template
+		f.Intrinsic.UI.Msgbox("There are no Workflow templates with the title RMA Workflow")
+		f.Intrinsic.Control.CallSub(end)
+	f.Intrinsic.Control.Else
+		'get the title of the template to create the workflow
+		f.Intrinsic.String.Build("Select TITLE, STATUS, T_TYPE from ATG_WFT_HEADER where WFT_ID = '{0}'",v.Global.iWF.Trim,v.Local.ssql)
+		F.ODBC.Connection!conx.OpenRecordsetRO("rst",V.Local.sSQL)
+		F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,False)
+			v.Local.stitle.Set(v.ODBC.conx!rst.FieldValTrim!TITLE)
+			v.Local.istatus.Set(v.ODBC.conx!rst.FieldValTrim!STATUS)
+		f.Intrinsic.Control.EndIf
+		F.ODBC.conx!rst.Close
+	f.Intrinsic.Control.EndIf
+
+	'create the workflow from the template
+	f.Global.WorkFlow.CreateFromTemplate(v.Global.iWF.Trim,v.Local.stitle.trim,v.Ambient.Date,v.Local.dduedate,v.Caller.User,v.Local.istatus.Long,v.Local.iret)
+		
+	v.Local.iholder.Set(v.Local.iret.Trim)
+	
+	'get the correct line ID
+	f.Intrinsic.String.Build("Select LINE_ID from ATG_WF_LINES where WF_ID = '{0}' and LINE = '{1}'",v.Local.iret.Trim,"1",v.Local.ssql)
+	F.ODBC.Connection!conx.OpenRecordsetRO("rst",V.Local.sSQL)
+	F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,False)
+		v.Local.iret.Set(v.ODBC.conx!rst.FieldValTrim!LINE_ID)
+	f.Intrinsic.Control.EndIf
+	F.ODBC.conx!rst.Close
+	
+	'set the RMA number as Meta 1
+	F.Global.WorkFlow.SetMetaData(v.Local.iret,1,0,v.Local.sRMA.Trim)
+	'set the RMA line number as Meta 2
+	f.Global.WorkFlow.SetMetaData(v.Local.iret,1,1,v.local.sline.trim)
+	'set the part number as meta 3
+	f.Global.WorkFlow.SetMetaData(v.Local.iret,1,2,v.local.spart.trim)
+	'set the Location as Meta 4
+	f.Global.WorkFlow.SetMetaData(v.Local.iret,1,3,v.local.sloc.trim)
+	'set the letters RMA in Meta 5
+	f.Global.WorkFlow.SetMetaData(v.Local.iret,1,4,"RMA")
+	'set the RMA number as Meta 1
+	F.Global.WorkFlow.SetMetaData(v.Local.iret,0,0,v.Local.sRMA.Trim)
+	'set the RMA line number as Meta 2
+	f.Global.WorkFlow.SetMetaData(v.Local.iret,0,1,v.local.sline.trim)
+	'set the part number as meta 3
+	f.Global.WorkFlow.SetMetaData(v.Local.iret,0,2,v.local.spart.trim)
+	'set the Location as Meta 4
+	f.Global.WorkFlow.SetMetaData(v.Local.iret,0,3,v.local.sloc.trim)
+	'set the letters RMA in Meta 5
+	f.Global.WorkFlow.SetMetaData(v.Local.iret,1,4,"RMA")
+	
+	'set the workflow number
+	v.Global.iWF.Set(v.Local.iret.Trim)
+	
+	'call the notify sales and quality sub
+	f.Intrinsic.Control.CallSub(notifysalesquality)
+F.Intrinsic.Control.EndIf
+
+'check to see if the completed line hook has fired
+f.Intrinsic.Control.If(v.Caller.Hook,=,34700)
+	f.Global.WorkFlow.GetIDFromTitle("RMA Workflow",v.Global.iWF)
+	
+	'call the check subroutine
+	f.Intrinsic.Control.CallSub(check)
+f.Intrinsic.Control.EndIf
+
+'check to see if the signoff hook has fired
+f.Intrinsic.Control.If(v.Caller.Hook,=,34701)
+	'get the ID to create the workflow
+	f.Global.WorkFlow.GetIDFromTitle("RMA Workflow",v.Global.iWF)
+	f.Intrinsic.Control.CallSub(signoffcheck)
+f.Intrinsic.Control.EndIf
+
+'check to see if parts are shipped
+f.Intrinsic.Control.If(v.Caller.Hook,=,28530)
+	'get the ID to create the workflow
+	f.Global.WorkFlow.GetIDFromTitle("RMA Workflow",v.Global.iWF)
+	'call the ship part sub
+	f.Intrinsic.Control.CallSub(shippart)
+f.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Main_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4197_RMA.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.CallSub(end)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Main.End
+
+Program.Sub.End.Start
+F.Intrinsic.Control.SetErrorHandler("End_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+
+'close connection to the database
+F.ODBC.Connection!conx.Close
+
+F.Intrinsic.Control.End
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("End_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4197_RMA.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.End
+
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.End.End
+
+Program.Sub.NotifySalesQuality.Start
+F.Intrinsic.Control.SetErrorHandler("NotifySalesQuality_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+v.Local.sret.Declare(string)
+v.Local.i.Declare(long)
+v.Local.sbody.Declare(string)
+v.Local.iuserid.Declare(long)
+v.Local.ssubject.Declare(string)
+v.Local.ssenderemail.Declare(string)
+v.Local.semail.Declare(string)
+v.Local.susername.Declare(string)
+
+'set the body and the subject of the email
+f.Intrinsic.String.Build("{0} {1} {2}","RMA:",v.Global.srma.Trim,"has been created.",v.Local.sbody)
+v.Local.ssubject.Set("New RMA Created")
+
+'get the e-mails from the Quality and Sales Groups
+f.Global.Security.GetGroupEmails("SALES",v.Local.sret)
+'split the return
+f.Intrinsic.String.Split(v.Local.sret,"*!*",v.Local.sret)
+
+'loop through the emails of the group and notify the users
+f.Intrinsic.Control.For(v.Local.i,v.Local.sret.LBound,v.Local.sret.UBound,1)
+	'get the user ID
+	f.Global.Security.getuserid(v.Caller.User,v.Caller.CompanyCode,v.Local.iuserid)
+	f.Global.Security.GetFullName(v.Caller.CompanyCode,v.Local.susername)
+	f.Global.Security.getuseremail(v.caller.user,v.local.ssenderemail)
+	f.Intrinsic.String.Build("{1}*!*{0}",v.Local.susername.trim,v.Local.ssenderemail.trim,v.local.semail)
+	
+	'send an email to the employee
+	f.Global.Messaging.queuemessage(v.Caller.CompanyCode,v.Local.iuserid.Trim,"",v.Local.ssubject,v.local.semail.Trim,v.local.sret(v.Local.i),v.local.sbody)
+f.Intrinsic.Control.Next(v.Local.i)
+
+'get the e-mails from the Quality and Sales Groups
+f.Global.Security.GetGroupEmails("QUALITY",v.Local.sret)
+'split the return
+f.Intrinsic.String.Split(v.Local.sret,"*!*",v.Local.sret)
+'loop through the emails of the group and notify the users
+f.Intrinsic.Control.For(v.Local.i,v.Local.sret.LBound,v.Local.sret.UBound,1)
+	'get the user ID
+	f.Global.Security.getuserid(v.Caller.User,v.Caller.CompanyCode,v.Local.iuserid)
+	f.Global.Security.GetFullName(v.Caller.CompanyCode,v.Local.susername)
+	f.Global.Security.getuseremail(v.caller.user,v.local.ssenderemail)
+	f.Intrinsic.String.Build("{1}*!*{0}",v.Local.susername.trim,v.Local.ssenderemail.trim,v.local.semail)
+	'send an email to the employee
+	f.Global.Messaging.queuemessage(v.Caller.CompanyCode,v.Local.iuserid.Trim,"",v.Local.ssubject,v.local.semail.Trim,v.local.sret(v.Local.i),v.local.sbody)
+f.Intrinsic.Control.Next(v.Local.i)
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("NotifySalesQuality_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4197_RMA.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.CallSub(end)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.NotifySalesQuality.End
+
+Program.Sub.ReceiveParts.Start
+F.Intrinsic.Control.SetErrorHandler("ReceiveParts_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+v.Local.suser.Declare(string)
+v.Local.ssignoff.Declare(string)
+v.Local.ssql.Declare(string)
+
+'Get the user group for that line
+f.Intrinsic.String.Build("Select USER_GROUP, SIGNOFF_USER_GROUP from ATG_WF_LINES where LINE_ID = '{0}' and WF_ID = '{1}'",v.Global.iline.Trim,v.Global.iWF.Trim,v.Local.ssql)
+F.ODBC.Connection!conx.OpenRecordsetRO("rst",V.Local.sSQL)
+F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,False)
+	'check to see if the user that signedoff on it is the same as the one assigned to it
+	v.Local.suser.Set(v.ODBC.conx!rst.FieldValTrim!USER_GROUP)
+	v.Local.ssignoff.Set(v.ODBC.conx!rst.FieldValTrim!SIGNOFF_USER_GROUP)
+f.Intrinsic.Control.EndIf
+'close connection
+F.ODBC.conx!rst.Close
+
+'Make sure the person who signed off is the one who it was assigned to
+f.Intrinsic.Control.If(v.Local.suser.Trim,<>,v.Local.ssignoff.Trim)
+	'inform the user that the person signing off doesn't match who it was assigned to
+	f.Intrinsic.UI.Msgbox("Sign off user does not match the assigned user, Workflow line not completed")
+	V.Passed.999999.Set(1)
+	f.Intrinsic.Control.CallSub(end)
+f.Intrinsic.Control.Else
+	'otherwise check to see if there is a 'Parts Received' form completed
+'	f.Intrinsic.String.Build("Select DESCRIPTION from ATG_WF_DOC_ASSOC where DESCRIPTION 
+f.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("ReceiveParts_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4197_RMA.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.CallSub(end)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.ReceiveParts.End
+
+Program.Sub.Check.Start
+F.Intrinsic.Control.SetErrorHandler("Check_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+v.Local.ssql.Declare(string)
+v.Local.suser.Declare(string)
+v.Local.ssignoff.Declare(string)
+v.Local.sret.Declare(string)
+v.Local.i.Declare(long)
+v.Local.susersql.Declare(string)
+v.Local.sreceive.Declare(string)
+v.Local.slinesql.Declare(string)
+v.Local.sassocid.Declare(string)
+v.Local.smsg.Declare(string)
+
+'set sreceive as "Receive Parts"
+v.Local.sreceive.Set("Receive Parts")
+v.Local.slinenumbers.Declare(string)
+
+'get the ID to create the workflow
+f.Global.WorkFlow.GetIDFromTitle("RMA Workflow",v.Global.iWF)
+
+'Get the user group for that line
+f.Intrinsic.String.Build("Select USER_GROUP, SIGNOFF_USER_GRP, COMPLETED_BY from ATG_WF_LINES where LINE = '{0}' and WF_ID = '{1}'",2,v.Global.iWF.Trim,v.Local.susersql)
+F.ODBC.Connection!conx.OpenRecordsetRO("rstuser",V.Local.suserSQL)
+F.Intrinsic.Control.If(V.ODBC.conx!rstuser.EOF,=,False)
+	'has this line been completed yet?
+	f.Intrinsic.Control.If(v.ODBC.conx!rstuser.FieldValTrim!COMPLETED_BY,=,"")
+		'check to see if the user asigned to the line has signed off on it?
+		f.Intrinsic.Control.If(v.ODBC.conx!rstuser.FieldValTrim!USER_GROUP,=,v.ODBC.conx!rstuser.FieldValTrim!SIGNOFF_USER_GRP)
+			'if they do match check to see if there is the part documentation attached
+			f.intrinsic.string.build("select DESCRIPTION from ATG_WF_DOCS_ASSOC where DESCRIPTION = '{0}'","Parts Returned Form",v.Local.ssql)
+			F.ODBC.Connection!conx.OpenRecordsetRO("rst",V.Local.sSQL)
+			'check to see if the document is associated
+			F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,False)
+				'since this line has not been completed but the user assigned matches and the form is  associated we can complete this line and move on
+				'call the notifysalesquality2 sub
+				f.ODBC.conx!rst.Close
+				f.ODBC.conx!rstuser.Close
+				f.Intrinsic.Control.CallSub(notifysalesquality2)
+				f.Intrinsic.Control.ExitSub	
+			f.Intrinsic.Control.Else
+				f.ODBC.conx!rst.Close
+				f.ODBC.conx!rstuser.Close
+				f.Intrinsic.String.Build("{0}. {1}","The Parts Returned Form needs to be completed before continuing","Workflow line not completed.",v.Local.smsg)
+				f.Intrinsic.UI.Msgbox(v.Local.smsg)
+				'override the complete and close the program
+				V.Passed.999999.Set(1)
+				f.Intrinsic.Control.CallSub(end)
+			f.Intrinsic.Control.EndIf
+		'if they don't equal one another, inform the user this needs to be done
+		f.intrinsic.control.else	
+			f.Intrinsic.String.Build("{0}: {1} {2}","The user assigned to this task",v.ODBC.conx!rstuser.FieldValTrim!SIGNOFF_USER_GRP," has not signed off yet. Workflow line not completed.",v.Local.smsg)
+			f.Intrinsic.UI.Msgbox(v.Local.smsg)
+			f.ODBC.conx!rstuser.Close
+			'override the complete and close the program
+			V.Passed.999999.Set(1)
+			f.Intrinsic.Control.CallSub(end)
+		f.Intrinsic.Control.EndIf
+	'if this line has already been completed, move on to quality inspection
+	f.Intrinsic.Control.Else	
+		f.ODBC.conx!rstuser.Close
+		f.Intrinsic.Control.CallSub(qualityinspection)
+		f.Intrinsic.Control.ExitSub	
+	f.Intrinsic.Control.EndIf
+f.Intrinsic.Control.endif
+	
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("Check_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4197_RMA.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.CallSub(end)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.Check.End
+
+Program.Sub.NotifySalesQuality2.Start
+F.Intrinsic.Control.SetErrorHandler("NotifySalesQuality2_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+v.Local.sret.Declare(string)
+v.Local.i.Declare(long)
+v.Local.sbody.Declare(string)
+v.Local.iuserid.Declare(long)
+v.Local.ssubject.Declare(string)
+v.Local.ssenderemail.Declare(string)
+v.Local.semail.Declare(string)
+v.Local.susername.Declare(string)
+v.Local.ssql.Declare(string)
+
+'set the body and the subject of the email
+f.Intrinsic.String.Build("{0}{1}","Please check your Workflows and complete any oustanding ","steps.",v.Local.sbody)
+v.Local.ssubject.Set("Parts Have Been Received")
+
+'get the e-mails from the Quality and Sales and MFG Support
+f.Global.Security.GetGroupEmails("SALES",v.Local.sret)
+'split the return
+f.Intrinsic.String.Split(v.Local.sret,"*!*",v.Local.sret)
+
+'loop through the emails of the group and notify the users
+f.Intrinsic.Control.For(v.Local.i,v.Local.sret.LBound,v.Local.sret.UBound,1)
+	'get the user ID
+	f.Global.Security.getuserid(v.Caller.User,v.Caller.CompanyCode,v.Local.iuserid)
+	f.Global.Security.GetFullName(v.Caller.CompanyCode,v.Local.susername)
+	f.Global.Security.getuseremail(v.caller.user,v.local.ssenderemail)
+	f.Intrinsic.String.Build("{1}*!*{0}",v.Local.susername.trim,v.Local.ssenderemail.trim,v.local.semail)
+	
+	'send an email to the employee
+	f.Global.Messaging.queuemessage(v.Caller.CompanyCode,v.Local.iuserid.Trim,"",v.Local.ssubject,v.local.semail.Trim,v.local.sret(v.Local.i),v.local.sbody)
+f.Intrinsic.Control.Next(v.Local.i)
+
+'get the e-mails from the Quality and Sales Groups
+f.Global.Security.GetGroupEmails("QUALITY",v.Local.sret)
+'split the return
+f.Intrinsic.String.Split(v.Local.sret,"*!*",v.Local.sret)
+
+'loop through the emails of the group and notify the users
+f.Intrinsic.Control.For(v.Local.i,v.Local.sret.LBound,v.Local.sret.UBound,1)
+	'get the user ID
+	f.Global.Security.getuserid(v.Caller.User,v.Caller.CompanyCode,v.Local.iuserid)
+	f.Global.Security.GetFullName(v.Caller.CompanyCode,v.Local.susername)
+	f.Global.Security.getuseremail(v.caller.user,v.local.ssenderemail)
+	f.Intrinsic.String.Build("{1}*!*{0}",v.Local.susername.trim,v.Local.ssenderemail.trim,v.local.semail)
+	
+	'send an email to the employee
+	f.Global.Messaging.queuemessage(v.Caller.CompanyCode,v.Local.iuserid.Trim,"",v.Local.ssubject,v.local.semail.Trim,v.local.sret(v.Local.i),v.local.sbody)
+f.Intrinsic.Control.Next(v.Local.i)
+
+'get the e-mails from the Quality and Sales Groups
+f.Global.Security.GetGroupEmails("MFGSUP",v.Local.sret)
+'split the return
+f.Intrinsic.String.Split(v.Local.sret,"*!*",v.Local.sret)
+
+'loop through the emails of the group and notify the users
+f.Intrinsic.Control.For(v.Local.i,v.Local.sret.LBound,v.Local.sret.UBound,1)
+	'get the user ID
+	f.Global.Security.getuserid(v.Caller.User,v.Caller.CompanyCode,v.Local.iuserid)
+	f.Global.Security.GetFullName(v.Caller.CompanyCode,v.Local.susername)
+	f.Global.Security.getuseremail(v.caller.user,v.local.ssenderemail)
+	f.Intrinsic.String.Build("{1}*!*{0}",v.Local.susername.trim,v.Local.ssenderemail.trim,v.local.semail)
+	
+	'send an email to the employee
+	f.Global.Messaging.queuemessage(v.Caller.CompanyCode,v.Local.iuserid.Trim,"",v.Local.ssubject,v.local.semail.Trim,v.local.sret(v.Local.i),v.local.sbody)
+f.Intrinsic.Control.Next(v.Local.i)
+
+
+'Pass the meta data to the next level
+'query for the meta data
+f.Intrinsic.String.Build("select META_1, META_2, META_3, META_4 from ATG_WF_LINES where WF_ID = '{0}' and LINE = '{1}'",v.Global.iWF.Trim,2,v.Local.ssql)
+F.ODBC.Connection!conx.OpenRecordsetRW("rst",V.Local.sSQL)
+F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,TRUE)
+	F.ODBC.conx!rst.AddNew
+	F.ODBC.conx!rst.Set!META_1(V.Global.META1)
+	F.ODBC.conx!rst.Set!META_2(V.Global.META2)
+	F.ODBC.conx!rst.Set!META_3(V.Global.META3)
+	F.ODBC.conx!rst.Set!META_4(V.Global.META4)
+	F.ODBC.conx!rst.Set!META_5(V.Global.META5)
+	F.ODBC.conx!rst.Update
+f.Intrinsic.Control.Else
+	F.ODBC.conx!rst.Set!META_1(V.Global.META1)
+	F.ODBC.conx!rst.Set!META_2(V.Global.META2)
+	F.ODBC.conx!rst.Set!META_3(V.Global.META3)
+	F.ODBC.conx!rst.Set!META_4(V.Global.META4)
+		F.ODBC.conx!rst.Set!META_5(V.Global.META5)
+	F.ODBC.conx!rst.Update
+f.Intrinsic.Control.EndIf
+f.ODBC.conx!rst.Close
+
+'F.Global.WorkFlow.DeleteLineDepepedency(v.global.iWF.Trim,2, DepType As Long, DepWFID As Long, DepLine As Long)
+
+''complete this line
+'F.Global.WorkFlow.CompleteLine(v.Global.iWF.Trim,1)
+
+'call teh quality inspection subroutine
+f.Intrinsic.Control.CallSub(qualityinspection)
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("NotifySalesQuality2_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4197_RMA.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.CallSub(end)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.NotifySalesQuality2.End
+
+Program.Sub.QualityInspection.Start
+F.Intrinsic.Control.SetErrorHandler("QualityInspection_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+v.Local.slinesql.Declare(string)
+v.Local.ssql.Declare(string)
+v.Local.sassocid.Declare(string)
+v.Local.ssignoff.Declare(string)
+v.Local.smsg.Declare(string)
+v.Local.sbody.Declare(string)
+v.Local.ssubject.Declare(string)
+v.Local.signoffuser.Declare(string)
+v.Local.sgroup.Declare(string)
+v.Local.bret.Declare(boolean)
+v.Local.i.Declare(long)
+v.Local.iuserid.Declare(long)
+v.Local.sret.Declare(string)
+v.Local.susername.Declare(string)
+v.Local.ssenderemail.Declare(string)
+v.Local.semail.Declare(string)
+
+'check to see if this line has already been completed
+f.Intrinsic.String.Build("Select COMPLETED_BY, SIGNOFF_USER_GRP from ATG_WF_LINES where LINE = '{0}' and WF_ID = '{1}'","2",v.Global.iWF.Trim,v.Local.ssql)
+F.ODBC.Connection!conx.OpenRecordsetRO("rst",V.Local.sSQL)
+F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,False)
+	'set the user who signed off as a local variable
+	v.Local.signoffuser.Set(v.ODBC.conx!rst.FieldValTrim!SIGNOFF_USER_GRP)
+	'if this line has been completed call the quality inspection sub
+	f.Intrinsic.Control.If(v.ODBC.conx!rst.FieldValTrim!COMPLETED_BY,<>,"")
+		'close connection and exit sub and call engineering review sub
+		f.ODBC.conx!rst.close
+		f.Intrinsic.Control.CallSub(engineeringreview)
+		f.Intrinsic.Control.ExitSub
+	f.Intrinsic.Control.EndIf
+f.Intrinsic.Control.EndIf
+f.ODBC.conx!rst.close
+
+'check to see if the user who signed off was in the Quality Management group
+'f.Intrinsic.Control
+
+f.intrinsic.string.build("select DESCRIPTION from ATG_WF_DOCS_ASSOC where DESCRIPTION = '{0}'","Quality Determination Form",v.Local.ssql)
+F.ODBC.Connection!conx.OpenRecordsetRO("rst",V.Local.sSQL)
+'check to see if the document is associated
+F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,False)
+	'since this line has not been completed and the form is associated we can complete this line and move on
+	f.ODBC.conx!rst.Close
+f.Intrinsic.Control.Else
+	f.Intrinsic.String.Build("{0}. {1}","The Quality Determination Form needs to be completed before continuing","Workflow line not completed.",v.Local.smsg)
+	f.Intrinsic.UI.Msgbox(v.Local.smsg)
+	'override the complete and close the program
+	V.Passed.999999.Set(1)
+	f.ODBC.conx!rst.Close
+	f.Intrinsic.Control.CallSub(end)
+f.Intrinsic.Control.EndIf
+
+'check and make sure that quality management has approved tis
+f.Intrinsic.Control.If(v.Local.signoffuser.trim,=,"QUALMGMT")
+f.Intrinsic.Control.Else
+	Function.Global.Security.GetUserGroups(v.Caller.User,v.Local.sgroup)
+	'check to see if QUALMGMT is in teh string of groups
+	f.Intrinsic.String.IsInString(v.Local.sgroup,"QUALMGMT",True,v.Local.bret)
+	f.Intrinsic.Control.If(v.Local.bret,=,False)
+		f.Intrinsic.String.Build("{0}. {1}","Someone from Quality Management will need to signoff on this prior to completion","Workflow line not completed.",v.Local.smsg)
+		f.Intrinsic.UI.Msgbox(v.Local.smsg)
+		'override the complete and close the program
+		V.Passed.999999.Set(1)
+		f.Intrinsic.Control.CallSub(end)
+	f.Intrinsic.Control.EndIf
+f.Intrinsic.Control.EndIf
+
+'email the quality to complete
+'set the body and the subject of the email
+f.Intrinsic.String.Build("{0}{1}","Please check your Workflows and complete any oustanding ","steps.",v.Local.sbody)
+v.Local.ssubject.Set("Parts Have Been Inspected")
+
+'get the e-mails from the Quality and Sales and MFG Support
+f.Global.Security.GetGroupEmails("QUALCOMP",v.Local.sret)
+'split the return
+f.Intrinsic.String.Split(v.Local.sret,"*!*",v.Local.sret)
+
+'loop through the emails of the group and notify the users
+f.Intrinsic.Control.For(v.Local.i,v.Local.sret.LBound,v.Local.sret.UBound,1)
+	'get the user ID
+	f.Global.Security.getuserid(v.Caller.User,v.Caller.CompanyCode,v.Local.iuserid)
+	f.Global.Security.GetFullName(v.Caller.CompanyCode,v.Local.susername)
+	f.Intrinsic.String.Build("{1}*!*{0}",v.Local.susername.trim,v.Local.ssenderemail.trim,v.local.semail)
+	
+	'send an email to the employee
+	f.Global.Messaging.queuemessage(v.Caller.CompanyCode,v.Local.iuserid.Trim,"",v.Local.ssubject,v.local.semail.Trim,v.local.sret(v.Local.i),v.local.sbody)
+f.Intrinsic.Control.Next(v.Local.i)
+
+''complete this line
+'F.Global.WorkFlow.CompleteLine(v.Global.iWF.Trim,2)
+
+'Pass the meta data to the next level
+'query for the meta data
+f.Intrinsic.String.Build("select META_1, META_2, META_3, META_4 from ATG_WF_LINES where WF_ID = '{0}' and LINE = '{1}'",v.Global.iWF.Trim,3,v.Local.ssql)
+F.ODBC.Connection!conx.OpenRecordsetRW("rst",V.Local.sSQL)
+F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,False)
+	F.ODBC.conx!rst.AddNew
+	F.ODBC.conx!rst.Set!META1(V.Global.META1.Trim)
+	F.ODBC.conx!rst.Set!META2(V.Global.META2.Trim)
+	F.ODBC.conx!rst.Set!META3(V.Global.META3.Trim)
+	F.ODBC.conx!rst.Set!META4(V.Global.META4.Trim)
+		F.ODBC.conx!rst.Set!META_5(V.Global.META5)
+	F.ODBC.conx!rst.Update
+f.Intrinsic.Control.EndIf
+f.ODBC.conx!rst.Close
+
+'call the engineering review sub
+f.Intrinsic.Control.CallSub(notifyqualityengmfg)
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("QualityInspection_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4197_RMA.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.CallSub(end)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.QualityInspection.End
+
+Program.Sub.EngineeringReview.Start
+F.Intrinsic.Control.SetErrorHandler("EngineeringReview_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+v.Local.slinesql.Declare(string)
+v.Local.ssql.Declare(string)
+v.Local.sassocid.Declare(string)
+v.Local.ssignoff.Declare(string)
+v.Local.suser.Declare(string)
+v.Local.sret.Declare(string)
+v.Local.i.Declare(long)
+v.Local.susersql.Declare(string)
+v.Local.smsg.Declare(string)
+
+'check to see if this line has already been completed
+f.Intrinsic.String.Build("Select COMPLETED_BY, USER_GROUP, SIGNOFF_USER_GRP from ATG_WF_LINES where LINE = '{0}' and WF_ID = '{1}'","3",v.Global.iWF.Trim,v.Local.ssql)
+F.ODBC.Connection!conx.OpenRecordsetRO("rst",V.Local.sSQL)
+F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,False)
+	'if this line has been completed call the quality inspection sub
+	f.Intrinsic.Control.If(v.ODBC.conx!rst.FieldValTrim!COMPLETED_BY,<>,"")
+		'close connection and exit sub and call engineering review sub
+		f.ODBC.conx!rst.close
+		f.Intrinsic.Control.CallSub(notifysalesacctengqual)
+		f.Intrinsic.Control.ExitSub
+	f.Intrinsic.Control.Else
+		'if the user who is supposed to have signed off has move on to the next step
+		f.Intrinsic.Control.If(v.ODBC.conx!rst.FieldValTrim!USER_GROUP,=,v.ODBC.conx!rst.FieldValTrim!SIGNOFF_USER_GRP)
+		f.ODBC.conx!rst.close
+		f.Intrinsic.Control.Else
+			f.Intrinsic.String.Build("{0}: {1} {2}","The user assigned to this task",v.ODBC.conx!rst.FieldValTrim!SIGNOFF_USER_GRP," has not signed off yet. Workflow line not completed.",v.Local.smsg)
+			f.Intrinsic.UI.Msgbox(v.Local.smsg)
+			f.ODBC.conx!rst.Close
+			'override the complete and close the program
+			V.Passed.999999.Set(1)
+			f.Intrinsic.Control.CallSub(end)
+		f.Intrinsic.Control.EndIf
+	f.Intrinsic.Control.EndIf
+f.Intrinsic.Control.EndIf
+
+'call the process eng action sub
+f.Intrinsic.Control.CallSub(processengaction)
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("EngineeringReview_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4197_RMA.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.CallSub(end)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.EngineeringReview.End
+
+Program.Sub.NotifyQualityEngMfg.Start
+F.Intrinsic.Control.SetErrorHandler("NotifyQualityEngMfg_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+v.Local.sret.Declare(string)
+v.Local.i.Declare(long)
+v.Local.sbody.Declare(string)
+v.Local.iuserid.Declare(long)
+v.Local.ssubject.Declare(string)
+v.Local.ssenderemail.Declare(string)
+v.Local.semail.Declare(string)
+v.Local.susername.Declare(string)
+v.Local.ssql.Declare(string)
+
+'set the body and the subject of the email
+'NEED TO GET RMA NUMBER FROM HOOK
+f.Intrinsic.String.Build("{0}{1}","Please check your Workflows and complete any oustanding ","steps.",v.Local.sbody)
+v.Local.ssubject.Set("Parts have been inspected")
+
+'get the e-mails from the Quality, Engineering and MFG Groups
+f.Global.Security.GetGroupEmails("QUALITY",v.Local.sret)
+
+'split the return
+f.Intrinsic.String.Split(v.Local.sret,"*!*",v.Local.sret)
+
+'loop through the emails of the group and notify the users
+f.Intrinsic.Control.For(v.Local.i,v.Local.sret.LBound,v.Local.sret.UBound,1)
+	'get the user ID
+	f.Global.Security.getuserid(v.Caller.User,v.Caller.CompanyCode,v.Local.iuserid)
+	f.Global.Security.GetFullName(v.Caller.CompanyCode,v.Local.susername)
+	f.Global.Security.getuseremail(v.caller.user,v.local.ssenderemail)
+	f.Intrinsic.String.Build("{1}*!*{0}",v.Local.susername.trim,v.Local.ssenderemail.trim,v.local.semail)
+	
+	'send an email to the employee
+	f.Global.Messaging.queuemessage(v.Caller.CompanyCode,v.Local.iuserid.Trim,"",v.Local.ssubject,v.local.semail.Trim,v.local.sret(v.Local.i),v.local.sbody)
+f.Intrinsic.Control.Next(v.Local.i)
+
+'get the e-mails from the Quality, Engineering and MFG Groups
+f.Global.Security.GetGroupEmails("ENGINEER",v.Local.sret)
+
+'split the return
+f.Intrinsic.String.Split(v.Local.sret,"*!*",v.Local.sret)
+
+'loop through the emails of the group and notify the users
+f.Intrinsic.Control.For(v.Local.i,v.Local.sret.LBound,v.Local.sret.UBound,1)
+	'get the user ID
+	f.Global.Security.getuserid(v.Caller.User,v.Caller.CompanyCode,v.Local.iuserid)
+	f.Global.Security.GetFullName(v.Caller.CompanyCode,v.Local.susername)
+	f.Global.Security.getuseremail(v.caller.user,v.local.ssenderemail)
+	f.Intrinsic.String.Build("{1}*!*{0}",v.Local.susername.trim,v.Local.ssenderemail.trim,v.local.semail)
+	
+	'send an email to the employee
+	f.Global.Messaging.queuemessage(v.Caller.CompanyCode,v.Local.iuserid.Trim,"",v.Local.ssubject,v.local.semail.Trim,v.local.sret(v.Local.i),v.local.sbody)
+f.Intrinsic.Control.Next(v.Local.i)
+
+'get the e-mails from the Quality, Engineering and MFG Groups
+f.Global.Security.GetGroupEmails("MFG",v.Local.sret)
+
+'split the return
+f.Intrinsic.String.Split(v.Local.sret,"*!*",v.Local.sret)
+
+'loop through the emails of the group and notify the users
+f.Intrinsic.Control.For(v.Local.i,v.Local.sret.LBound,v.Local.sret.UBound,1)
+	'get the user ID
+	f.Global.Security.getuserid(v.Caller.User,v.Caller.CompanyCode,v.Local.iuserid)
+	f.Global.Security.GetFullName(v.Caller.CompanyCode,v.Local.susername)
+	f.Global.Security.getuseremail(v.caller.user,v.local.ssenderemail)
+	f.Intrinsic.String.Build("{1}*!*{0}",v.Local.susername.trim,v.Local.ssenderemail.trim,v.local.semail)
+	
+	'send an email to the employee
+	f.Global.Messaging.queuemessage(v.Caller.CompanyCode,v.Local.iuserid.Trim,"",v.Local.ssubject,v.local.semail.Trim,v.local.sret(v.Local.i),v.local.sbody)
+f.Intrinsic.Control.Next(v.Local.i)
+
+'Pass the meta data to the next level
+'query for the meta data
+f.Intrinsic.String.Build("select META_1, META_2, META_3, META_4 from ATG_WF_LINES where WF_ID = '{0}' and LINE = '{1}'",v.Global.iWF.Trim,4,v.Local.ssql)
+F.ODBC.Connection!conx.OpenRecordsetRW("rst",V.Local.sSQL)
+F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,False)
+	F.ODBC.conx!rst.AddNew
+	F.ODBC.conx!rst.Set!META_1(V.Global.META1.Trim)
+	F.ODBC.conx!rst.Set!META_2(V.Global.META2.Trim)
+	F.ODBC.conx!rst.Set!META_3(V.Global.META3.Trim)
+	F.ODBC.conx!rst.Set!META_4(V.Global.META4.Trim)
+		F.ODBC.conx!rst.Set!META_5(V.Global.META5)
+	F.ODBC.conx!rst.Update
+f.Intrinsic.Control.EndIf
+f.ODBC.conx!rst.Close
+
+''complete this line
+'F.Global.WorkFlow.CompleteLine(v.Global.iWF.Trim,3)
+
+'call the engineering review sub
+f.Intrinsic.Control.CallSub(engineeringreview)
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("NotifyQualityEngMfg_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4197_RMA.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.CallSub(end)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.NotifyQualityEngMfg.End
+
+Program.Sub.ProcessEngAction.Start
+F.Intrinsic.Control.SetErrorHandler("ProcessEngAction_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+v.Local.susersql.Declare(string)
+v.Local.ssignoff.Declare(string)
+v.Local.bret.Declare(Boolean)
+v.Local.sgroup.Declare(string)
+
+'MFG Support and Process will need to sign off on Action to complete the step. 
+'Get the user group for that line
+f.Intrinsic.String.Build("Select USER_GROUP, SIGNOFF_USER_GRP from ATG_WF_LINES where LINE = '{0}' and WF_ID = '{1}'","3",v.Global.iWF.Trim,v.Local.susersql)
+F.ODBC.Connection!conx.OpenRecordsetRO("rstuser",V.Local.suserSQL)
+F.Intrinsic.Control.If(V.ODBC.conx!rstuser.EOF,=,False)
+	'make sure the completed by is not equal to the mfg support group - NEED TO GET CUSTOMER'S USER GROUPS
+	f.Intrinsic.Control.If(v.ODBC.conx!rst.FieldValTrim!SIGNOFF_USER_GRP,<>,"MFGSUP")
+	f.Intrinsic.Control.AndIf(v.ODBC.conx!rst.FieldValTrim!SIGNOFF_USER_GRP,<>,"PROCESS")
+	
+		Function.Global.Security.GetUserGroups(v.Caller.User,v.Local.sgroup)
+		'check to see if QUALMGMT is in teh string of groups
+		f.Intrinsic.String.IsInString(v.Local.sgroup,"PROCESS",True,v.Local.bret)
+		f.Intrinsic.String.IsInString(v.Local.sgroup,"MFGSUP",True,v.Local.bret)
+		f.Intrinsic.Control.If(v.Local.bret,=,True)
+			f.Intrinsic.UI.Msgbox("The user signing off needs to be from either the MFG Support or Process Group, Workflow line not completed")
+			'cancel completion and end program
+			V.Passed.999999.Set(1)
+			f.Intrinsic.Control.CallSub(end)
+		f.Intrinsic.Control.EndIf
+	f.Intrinsic.Control.EndIf
+f.Intrinsic.control.EndIf
+f.ODBC.conx!rstuser.Close
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("ProcessEngAction_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4197_RMA.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.CallSub(end)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.ProcessEngAction.End
+
+Program.Sub.NotifySalesAcctEngQual.Start
+F.Intrinsic.Control.SetErrorHandler("NotifySalesAcctEngQual_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+v.Local.sret.Declare(string)
+v.Local.i.Declare(long)
+v.Local.sbody.Declare(string)
+v.Local.iuserid.Declare(long)
+v.Local.ssubject.Declare(string)
+v.Local.ssenderemail.Declare(string)
+v.Local.semail.Declare(string)
+v.Local.ssql.Declare(string)
+v.Local.susername.Declare(string)
+
+'set the body and the subject of the email
+f.Intrinsic.String.Build("{0}{1}","Please check your Workflows and complete any oustanding ","steps.",v.Local.sbody)
+v.Local.ssubject.Set("Process Engineering Step Complete")
+
+'get the e-mails from the Quality, Engineering and MFG Groups
+f.Global.Security.GetGroupEmails("SALES",v.Local.sret)
+
+'split the return
+f.Intrinsic.String.Split(v.Local.sret,"*!*",v.Local.sret)
+
+'loop through the emails of the group and notify the users
+f.Intrinsic.Control.For(v.Local.i,v.Local.sret.LBound,v.Local.sret.UBound,1)
+	'get the user ID
+	f.Global.Security.getuserid(v.Caller.User,v.Caller.CompanyCode,v.Local.iuserid)
+	f.Global.Security.GetFullName(v.Caller.CompanyCode,v.Local.susername)
+	f.Global.Security.getuseremail(v.caller.user,v.local.ssenderemail)
+	f.Intrinsic.String.Build("{1}*!*{0}",v.Local.susername.trim,v.Local.ssenderemail.trim,v.local.semail)
+	
+	'send an email to the employee
+	f.Global.Messaging.queuemessage(v.Caller.CompanyCode,v.Local.iuserid.Trim,"",v.Local.ssubject,v.local.semail.Trim,v.local.sret(v.Local.i),v.local.sbody)
+f.Intrinsic.Control.Next(v.Local.i)
+
+'get the e-mails from the Quality, Engineering and MFG Groups
+f.Global.Security.GetGroupEmails("ACCOUNT",v.Local.sret)
+
+'split the return
+f.Intrinsic.String.Split(v.Local.sret,"*!*",v.Local.sret)
+
+'loop through the emails of the group and notify the users
+f.Intrinsic.Control.For(v.Local.i,v.Local.sret.LBound,v.Local.sret.UBound,1)
+	'get the user ID
+	f.Global.Security.getuserid(v.Caller.User,v.Caller.CompanyCode,v.Local.iuserid)
+	f.Global.Security.GetFullName(v.Caller.CompanyCode,v.Local.susername)
+	f.Global.Security.getuseremail(v.caller.user,v.local.ssenderemail)
+	f.Intrinsic.String.Build("{1}*!*{0}",v.Local.susername.trim,v.Local.ssenderemail.trim,v.local.semail)
+	
+	'send an email to the employee
+	f.Global.Messaging.queuemessage(v.Caller.CompanyCode,v.Local.iuserid.Trim,"",v.Local.ssubject,v.local.semail.Trim,v.local.sret(v.Local.i),v.local.sbody)
+f.Intrinsic.Control.Next(v.Local.i)
+
+'get the e-mails from the Quality, Engineering and MFG Groups
+f.Global.Security.GetGroupEmails("ENGINEER",v.Local.sret)
+
+'split the return
+f.Intrinsic.String.Split(v.Local.sret,"*!*",v.Local.sret)
+
+'loop through the emails of the group and notify the users
+f.Intrinsic.Control.For(v.Local.i,v.Local.sret.LBound,v.Local.sret.UBound,1)
+	'get the user ID
+	f.Global.Security.getuserid(v.Caller.User,v.Caller.CompanyCode,v.Local.iuserid)
+	f.Global.Security.GetFullName(v.Caller.CompanyCode,v.Local.susername)
+	f.Global.Security.getuseremail(v.caller.user,v.local.ssenderemail)
+	f.Intrinsic.String.Build("{1}*!*{0}",v.Local.susername.trim,v.Local.ssenderemail.trim,v.local.semail)
+	
+	'send an email to the employee
+	f.Global.Messaging.queuemessage(v.Caller.CompanyCode,v.Local.iuserid.Trim,"",v.Local.ssubject,v.local.semail.Trim,v.local.sret(v.Local.i),v.local.sbody)
+f.Intrinsic.Control.Next(v.Local.i)
+
+'get the e-mails from the Quality, Engineering and MFG Groups
+f.Global.Security.GetGroupEmails("QUALITY",v.Local.sret)
+
+'split the return
+f.Intrinsic.String.Split(v.Local.sret,"*!*",v.Local.sret)
+
+'loop through the emails of the group and notify the users
+f.Intrinsic.Control.For(v.Local.i,v.Local.sret.LBound,v.Local.sret.UBound,1)
+	'get the user ID
+	f.Global.Security.getuserid(v.Caller.User,v.Caller.CompanyCode,v.Local.iuserid)
+	f.Global.Security.GetFullName(v.Caller.CompanyCode,v.Local.susername)
+	f.Global.Security.getuseremail(v.caller.user,v.local.ssenderemail)
+	f.Intrinsic.String.Build("{1}*!*{0}",v.Local.susername.trim,v.Local.ssenderemail.trim,v.local.semail)
+	
+	'send an email to the employee
+	f.Global.Messaging.queuemessage(v.Caller.CompanyCode,v.Local.iuserid.Trim,"",v.Local.ssubject,v.local.semail.Trim,v.local.sret(v.Local.i),v.local.sbody)
+f.Intrinsic.Control.Next(v.Local.i)
+
+'complete the line
+'F.Global.WorkFlow.CompleteLine(v.Global.iwf.Trim,4)
+
+'Pass the meta data to the next level
+'query for the meta data
+f.Intrinsic.String.Build("select META_1, META_2, META_3, META_4, META_5 from ATG_WF_LINES where WF_ID = '{0}' and LINE = '{1}'",v.Global.iWF.Trim,5,v.Local.ssql)
+F.ODBC.Connection!conx.OpenRecordsetRW("rst",V.Local.sSQL)
+F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,False)
+	F.ODBC.conx!rst.AddNew
+	F.ODBC.conx!rst.Set!META_1(V.Global.META1.Trim)
+	F.ODBC.conx!rst.Set!META_2(V.Global.META2.Trim)
+	F.ODBC.conx!rst.Set!META_3(V.Global.META3.Trim)
+	F.ODBC.conx!rst.Set!META_4(V.Global.META4.Trim)
+		F.ODBC.conx!rst.Set!META_5(V.Global.META5)
+	F.ODBC.conx!rst.Update
+f.Intrinsic.Control.EndIf
+f.ODBC.conx!rst.Close
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("NotifySalesAcctEngQual_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4197_RMA.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.CallSub(end)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.NotifySalesAcctEngQual.End
+
+Program.Sub.ShipPart.Start
+F.Intrinsic.Control.SetErrorHandler("ShipPart_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+v.Local.suser.Declare(string)
+v.Local.ssignoff.Declare(string)
+v.Local.ssql.Declare(string)
+
+'Get the user group for that line
+f.Intrinsic.String.Build("Select USER_GROUP, SIGNOFF_USER_GROUP from ATG_WF_LINES where LINE_ID = '{0}' and WF_ID = '{1}'",v.Global.iline.Trim,v.Global.iWF.Trim,v.Local.ssql)
+F.ODBC.Connection!conx.OpenRecordsetRO("rst",V.Local.sSQL)
+F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,False)
+	'check to see if the user that signedoff on it is the same as the one assigned to it
+	v.Local.suser.Set(v.ODBC.conx!rst.FieldValTrim!USER_GROUP)
+	v.Local.ssignoff.Set(v.ODBC.conx!rst.FieldValTrim!SIGNOFF_USER_GROUP)
+f.Intrinsic.Control.EndIf
+'close connection
+F.ODBC.conx!rst.Close
+
+'Make sure the person who signed off is the one who it was assigned to
+f.Intrinsic.Control.If(v.Local.suser.Trim,<>,v.Local.ssignoff.Trim)
+	'inform the user that the person signing off doesn't match who it was assigned to
+	f.Intrinsic.UI.Msgbox("Sign off user does not match the assigned user, Workflow line not completed")
+	V.Passed.999999.Set(1)
+	f.Intrinsic.Control.CallSub(end)
+f.Intrinsic.Control.Else
+	'otherwise check to see if there is a 'Parts Received' form completed
+'	f.Intrinsic.String.Build("Select DESCRIPTION from ATG_WF_DOC_ASSOC where DESCRIPTION 
+f.Intrinsic.Control.EndIf
+
+'otherwise call the final step email sales/production
+f.Intrinsic.Control.CallSub(emailsalesproduction)
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("ShipPart_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4197_RMA.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.CallSub(end)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.ShipPart.End
+
+Program.Sub.EmailSalesProduction.Start
+F.Intrinsic.Control.SetErrorHandler("EmailSalesProduction_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+v.Local.sret.Declare(string)
+v.Local.i.Declare(long)
+v.Local.sbody.Declare(string)
+v.Local.iuserid.Declare(long)
+v.Local.ssubject.Declare(string)
+v.Local.ssenderemail.Declare(string)
+v.Local.semail.Declare(string)
+v.Local.susername.Declare(string)
+v.Local.ssql.Declare(string)
+
+'set the body and the subject of the email
+f.Intrinsic.String.Build("{0}{1}","Please check your Workflows and complete any oustanding ","steps.",v.Local.sbody)
+v.Local.ssubject.Set("Parts Have Been Received")
+
+'get the e-mails from the Quality and Sales and MFG Support
+f.Global.Security.GetGroupEmails("SALES",v.Local.sret)
+'split the return
+f.Intrinsic.String.Split(v.Local.sret,"*!*",v.Local.sret)
+
+'loop through the emails of the group and notify the users
+f.Intrinsic.Control.For(v.Local.i,v.Local.sret.LBound,v.Local.sret.UBound,1)
+	'get the user ID
+	f.Global.Security.getuserid(v.Caller.User,v.Caller.CompanyCode,v.Local.iuserid)
+	f.Global.Security.GetFullName(v.Caller.CompanyCode,v.Local.susername)
+	f.Global.Security.getuseremail(v.caller.user,v.local.ssenderemail)
+	f.Intrinsic.String.Build("{1}*!*{0}",v.Local.susername.trim,v.Local.ssenderemail.trim,v.local.semail)
+	
+	'send an email to the employee
+	f.Global.Messaging.queuemessage(v.Caller.CompanyCode,v.Local.iuserid.Trim,"",v.Local.ssubject,v.local.semail.Trim,v.local.sret(v.Local.i),v.local.sbody)
+f.Intrinsic.Control.Next(v.Local.i)
+
+'get the e-mails from the Quality and Sales and MFG Support
+f.Global.Security.GetGroupEmails("PRODUCTION",v.Local.sret)
+'split the return
+f.Intrinsic.String.Split(v.Local.sret,"*!*",v.Local.sret)
+
+'loop through the emails of the group and notify the users
+f.Intrinsic.Control.For(v.Local.i,v.Local.sret.LBound,v.Local.sret.UBound,1)
+	'get the user ID
+	f.Global.Security.getuserid(v.Caller.User,v.Caller.CompanyCode,v.Local.iuserid)
+	f.Global.Security.GetFullName(v.Caller.CompanyCode,v.Local.susername)
+	f.Global.Security.getuseremail(v.caller.user,v.local.ssenderemail)
+	f.Intrinsic.String.Build("{1}*!*{0}",v.Local.susername.trim,v.Local.ssenderemail.trim,v.local.semail)
+	
+	'send an email to the employee
+	f.Global.Messaging.queuemessage(v.Caller.CompanyCode,v.Local.iuserid.Trim,"",v.Local.ssubject,v.local.semail.Trim,v.local.sret(v.Local.i),v.local.sbody)
+f.Intrinsic.Control.Next(v.Local.i)
+
+'F.Global.WorkFlow.CompleteLine(v.Global.iwf.Trim,5)
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("EmailSalesProduction_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4197_RMA.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.CallSub(end)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.EmailSalesProduction.End
+
+Program.Sub.SignoffCheck.Start
+F.Intrinsic.Control.SetErrorHandler("SignoffCheck_Err")
+F.Intrinsic.Control.ClearErrors
+
+V.Local.sError.Declare(String)
+v.Local.i.Declare(long)
+v.Local.ssql.Declare(string)
+v.Local.susersql.Declare(string)
+v.Local.susers.Declare(string)
+v.Local.bret.Declare(boolean)
+
+'start at step 2
+f.Intrinsic.String.Build("Select USER_GROUP, SIGNOFF_USER_GRP from ATG_WF_LINES where WF_ID = '{0}' and LINE = '{1}'",v.Global.iWF.Trim,"2",v.Local.ssql)
+F.ODBC.Connection!conx.OpenRecordsetRO("rst",V.Local.sSQL)
+F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,False)
+	'if they equal continue on
+	f.Intrinsic.Control.If(v.ODBC.conx!rst.FieldValTrim!USER_GROUP,=,v.ODBC.conx!rst.fieldvaltrim!SIGNOFF_USER_GRP)
+	'otherwise inform the user they need to match		
+	f.Intrinsic.Control.Else
+		f.Intrinsic.UI.Msgbox("The receive part step user does not match the assigned user for that step, Signoff for this step not completed")
+		V.Passed.999999.Set(1)
+		f.ODBC.conx!rst.Close
+		f.Intrinsic.Control.CallSub(end)		
+	f.Intrinsic.Control.EndIf
+f.Intrinsic.Control.EndIf
+'close the connection
+f.ODBC.conx!rst.Close
+
+'Get the user group for that line
+f.Intrinsic.String.Build("Select USER_GROUP, SIGNOFF_USER_GRP from ATG_WF_LINES where LINE = '{0}' and WF_ID = '{1}'","4",v.Global.iWF.Trim,v.Local.susersql)
+F.ODBC.Connection!conx.OpenRecordsetRO("rst",V.Local.suserSQL)
+F.Intrinsic.Control.If(V.ODBC.conx!rst.EOF,=,False)
+	'set a variable as the user who signed off
+	v.Local.susers.Set(v.ODBC.conx!rst.FieldValTrim!SIGNOFF_USER_GRP)
+	f.Global.Security.IsInGroup(v.Local.susers.Trim,"MFGSUP",v.local.bret)
+	'see if he is in the mfg supply group
+	f.Intrinsic.Control.If(v.Local.bret,=,True)
+		f.ODBC.conx!rst.Close
+		'close this step and move on to the next
+		f.Intrinsic.Control.CallSub(notifysalesacctengqual)
+	f.Intrinsic.Control.Else
+		f.Global.Security.IsInGroup(v.Local.susers.Trim,"PROCESS",v.local.bret)
+		f.Intrinsic.Control.If(v.Local.bret,=,True)
+			f.ODBC.conx!rst.Close
+			'close this step and move on to the next
+			f.Intrinsic.Control.CallSub(notifysalesacctengqual)
+		f.Intrinsic.Control.Else
+			f.ODBC.conx!rst.Close
+			f.Intrinsic.UI.Msgbox("The user signing off needs to be from either the MFG Support or Process Group, Workflow line not completed")
+			V.Passed.999999.Set(1)
+			f.Intrinsic.Control.CallSub(end)
+		f.Intrinsic.Control.EndIf
+	f.Intrinsic.Control.EndIf
+f.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.ExitSub
+
+F.Intrinsic.Control.Label("SignoffCheck_Err")
+F.Intrinsic.Control.If(V.Ambient.ErrorNumber,<>,0)
+	Function.Intrinsic.String.Concat("Project: GCG_4197_RMA.g2u",V.Ambient.Newline,V.Ambient.Newline,"Subroutine: ",V.Ambient.CurrentSubroutine,V.Ambient.NewLine,"Error Occurred ",V.Ambient.ErrorNumber," with description ",V.Ambient.ErrorDescription,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	f.Intrinsic.Control.CallSub(end)
+Function.Intrinsic.Control.EndIf
+
+
+Program.Sub.SignoffCheck.End
+
+Program.Sub.Comments.Start
+${$0$}$$}$WAW$}$8/29/2016 3:41:10 PM$}$False
+${$3$}$0$}$$}$-1$}$-1$}$$}$1/1/1900$}$Original customer was SMS Millcraft.
+
+This is a re-write of the original script due to many inconsistencies with the original.
+Program.Sub.Comments.End
